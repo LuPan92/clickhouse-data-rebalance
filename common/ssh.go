@@ -2,20 +2,14 @@ package common
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"io"
 	"net"
-	"os"
-	"path"
 	"strings"
 	"sync"
 	"time"
 
-	scp "github.com/bramvdbogaerde/go-scp"
-
-	"github.com/housepower/ckman/config"
-	"github.com/housepower/ckman/log"
+	"github.com/LuPan92/clickhouse-data-rebalance/log"
 
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
@@ -45,25 +39,6 @@ func sshConnectwithPassword(user, password string) (*ssh.ClientConfig, error) {
 	}, nil
 }
 
-func sshConnectwithPublickKey(user string) (*ssh.ClientConfig, error) {
-	key, err := os.ReadFile(path.Join(config.GetWorkDirectory(), "conf", "id_rsa"))
-	if err != nil {
-		return nil, errors.Wrap(err, "")
-	}
-	signer, err := ssh.ParsePrivateKey(key)
-	if err != nil {
-		return nil, errors.Wrap(err, "")
-	}
-	return &ssh.ClientConfig{
-		User: user,
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
-		},
-		Timeout:         30 * time.Second,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}, nil
-}
-
 func SSHConnect(opts SshOptions) (*ssh.Client, error) {
 	var (
 		addr         string
@@ -72,10 +47,10 @@ func SSHConnect(opts SshOptions) (*ssh.Client, error) {
 		err          error
 	)
 
-	if opts.AuthenticateType == SshPasswordUsePubkey {
-		clientConfig, err = sshConnectwithPublickKey(opts.User)
-	} else {
+	if opts.AuthenticateType == SshPasswordSave {
 		clientConfig, err = sshConnectwithPassword(opts.User, opts.Password)
+	} else {
+		return nil, err
 	}
 	if err != nil {
 		return nil, err
@@ -89,68 +64,6 @@ func SSHConnect(opts SshOptions) (*ssh.Client, error) {
 	}
 
 	return client, nil
-}
-
-func ScpConnect(opts SshOptions) (*scp.Client, *ssh.Client, error) {
-	sshClient, err := SSHConnect(opts)
-	if err != nil {
-		return nil, nil, err
-	}
-	// create scp client
-	var client scp.Client
-	if client, err = scp.NewClientBySSH(sshClient); err != nil {
-		err = errors.Wrapf(err, "")
-		sshClient.Close()
-		return nil, nil, err
-	}
-
-	return &client, sshClient, nil
-}
-
-// https://stackoverflow.com/questions/41259439/how-to-convert-filemode-to-int
-func GetFilePerm(file string) (string, error) {
-	fileInfo, err := os.Stat(file)
-	if err != nil {
-		return "", errors.Wrapf(err, "GetFilePerm")
-	}
-	perm := fileInfo.Mode().Perm()
-	return fmt.Sprintf("%04o", perm), nil
-}
-
-func ScpUpload(client *scp.Client, localFilePath, remoteFilePath string) error {
-	f, err := os.Open(localFilePath)
-	if err != nil {
-		return errors.Wrapf(err, "os.Open")
-	}
-	defer f.Close()
-	perm, err := GetFilePerm(localFilePath)
-	if err != nil {
-		return err
-	}
-	err = client.CopyFromFile(context.Background(), *f, remoteFilePath, perm)
-	if err != nil {
-		err = errors.Wrapf(err, "CopyFromFile")
-		return err
-	}
-	return nil
-}
-
-func ScpDownload(client *scp.Client, remoteFilePath, localFilePath string) error {
-	_ = os.Remove(localFilePath) //truncate local file first
-	f, err := os.Create(localFilePath)
-	if err != nil {
-		err = errors.Wrapf(err, "")
-		return err
-	}
-	defer f.Close()
-
-	err = client.CopyFromRemote(context.Background(), f, remoteFilePath)
-	if err != nil {
-		err = errors.Wrapf(err, "")
-		return err
-	}
-
-	return nil
 }
 
 func SSHRun(client *ssh.Client, password, shell string) (result string, err error) {
@@ -227,83 +140,6 @@ func SSHRun(client *ssh.Client, password, shell string) (result string, err erro
 	}
 	log.Logger.Debugf("output:[%s]", result)
 	return
-}
-
-func ScpUploadFiles(files []string, remotePath string, opts SshOptions) error {
-	for _, file := range files {
-		if file == "" {
-			continue
-		}
-		remoteFile := path.Join(remotePath, path.Base(file))
-		err := ScpUploadFile(file, remoteFile, opts)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func ScpUploadFile(localFile, remoteFile string, opts SshOptions) error {
-	client, sshClient, err := ScpConnect(opts)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-	defer sshClient.Close()
-	// delete remote file first, beacuse maybe the remote file exists and created by root
-	cmd := fmt.Sprintf("rm -rf %s", path.Join(TmpWorkDirectory, path.Base(remoteFile)))
-	_, err = RemoteExecute(opts, cmd)
-	if err != nil {
-		return err
-	}
-
-	err = ScpUpload(client, localFile, path.Join(TmpWorkDirectory, path.Base(remoteFile)))
-	if err != nil {
-		return err
-	}
-
-	if path.Dir(remoteFile) != TmpWorkDirectory {
-		cmd = fmt.Sprintf("cp %s %s", path.Join(TmpWorkDirectory, path.Base(remoteFile)), remoteFile)
-		_, err = RemoteExecute(opts, cmd)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func ScpDownloadFiles(files []string, localPath string, opts SshOptions) error {
-	client, sshClient, err := ScpConnect(opts)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-	defer sshClient.Close()
-
-	for _, file := range files {
-		baseName := path.Base(file)
-		err = ScpDownload(client, file, path.Join(localPath, baseName))
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func ScpDownloadFile(remoteFile, localFile string, opts SshOptions) error {
-	client, sshClient, err := ScpConnect(opts)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-	defer sshClient.Close()
-
-	err = ScpDownload(client, remoteFile, localFile)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func RemoteExecute(opts SshOptions, cmd string) (string, error) {

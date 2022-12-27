@@ -12,8 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/housepower/ckman/log"
-	"github.com/housepower/ckman/model"
+	"github.com/LuPan92/clickhouse-data-rebalance/log"
 	"github.com/pkg/errors"
 )
 
@@ -125,33 +124,10 @@ func GetMergeTreeTables(engine string, db *sql.DB) ([]string, map[string][]strin
 	return databases, dbtables, nil
 }
 
-func GetShardAvaliableHosts(conf *model.CKManClickHouseConfig) ([]string, error) {
-	var hosts []string
-	var lastErr error
-
-	for _, shard := range conf.Shards {
-		for _, replica := range shard.Replicas {
-			_, err := ConnectClickHouse(replica.Ip, conf.Port, model.ClickHouseDefaultDB, conf.User, conf.Password)
-			if err == nil {
-				hosts = append(hosts, replica.Ip)
-				break
-			} else {
-				lastErr = err
-			}
-		}
-	}
-	if len(hosts) < len(conf.Shards) {
-		log.Logger.Errorf("not all shard avaliable: %v", lastErr)
-		return []string{}, nil
-	}
-	log.Logger.Debugf("hosts: %v", hosts)
-	return hosts, nil
-}
-
 /*
-	v1 == v2 return 0
-	v1 > v2 return 1
-	v1 < v2 return -1
+v1 == v2 return 0
+v1 > v2 return 1
+v1 < v2 return -1
 */
 func CompareClickHouseVersion(v1, v2 string) int {
 	s1 := strings.Split(v1, ".")
@@ -180,14 +156,14 @@ const (
 	DOUBLE_SHA1_HEX
 )
 
-//echo -n "cyc2010" |sha256sum |tr -d "-"
-//a40943925ca51a95de7d39bc8c31757207d53b5e7114e695c04db63b6868f3e1
+// echo -n "cyc2010" |sha256sum |tr -d "-"
+// a40943925ca51a95de7d39bc8c31757207d53b5e7114e695c04db63b6868f3e1
 func sha256sum(plaintext string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(plaintext)))
 }
 
-//echo -n "cyc2010" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
-//812b8fad11eb25a3cf4cc2c54ae10a4948a0c25b
+// echo -n "cyc2010" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+// 812b8fad11eb25a3cf4cc2c54ae10a4948a0c25b
 func hexsha1sum(plaintext string) string {
 	sum := fmt.Sprintf("%x", sha1.Sum([]byte(plaintext)))
 	xxd, _ := hex.DecodeString(sum)
