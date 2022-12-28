@@ -117,7 +117,6 @@ func main() {
 	}
 	defer common.CloseConns(chHosts)
 
-	// 后期考虑使用整个集群的数据进行 rebalance
 	if err = rebalancer.GetTables(database, tables); err != nil {
 		log.Logger.Fatalf("got error %+v", err)
 	}
