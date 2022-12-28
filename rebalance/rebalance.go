@@ -12,6 +12,7 @@ import (
 	"github.com/LuPan92/clickhouse-data-rebalance/log"
 	"github.com/k0kubun/pp"
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 )
 
 var (
@@ -57,15 +58,28 @@ func (this *CKRebalance) InitCKConns() (err error) {
 	return
 }
 
-func (this *CKRebalance) GetTables() (err error) {
+func (this *CKRebalance) GetTables(database string, tables []string) (err error) {
 	host := this.Hosts[0]
-	db := common.GetConnection(host)
-	if db == nil {
+	conn := common.GetConnection(host)
+	if conn == nil {
 		return fmt.Errorf("can't get connection: %s", host)
 	}
-	if this.Databases, this.DBTables, err = common.GetMergeTreeTables("MergeTree", db); err != nil {
+	databases, allDBTables, err := common.GetMergeTreeTables("MergeTree", conn)
+	if err != nil {
 		return
 	}
+	if slices.Contains(databases, database) {
+		this.Databases = append(this.Databases, database)
+	} else {
+		return fmt.Errorf("database does not exist! database: %s", database)
+	}
+	dbtables := allDBTables[database]
+	for _, table := range tables {
+		if !slices.Contains(dbtables, table) {
+			return fmt.Errorf("table does not exist! database: %s, table: %s", database, table)
+		}
+	}
+	this.DBTables[database] = tables
 	return
 }
 

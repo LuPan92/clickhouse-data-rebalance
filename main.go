@@ -29,6 +29,8 @@ type CmdOptions struct {
 	OsUser     string
 	OsPassword string
 	OsPort     int
+	ChDatabase string
+	ChTables   string
 }
 
 var (
@@ -57,6 +59,8 @@ func initCmdOptions() {
 	common.EnvStringVar(&cmdOps.OsUser, "os-user")
 	common.EnvStringVar(&cmdOps.OsPassword, "os-password")
 	common.EnvIntVar(&cmdOps.OsPort, "os-port")
+	common.EnvStringVar(&cmdOps.ChDataDir, "ch-database")
+	common.EnvStringVar(&cmdOps.ChTables, "ch-tables")
 
 	// 3. Replace options with the corresponding CLI parameter if present.
 	flag.BoolVar(&cmdOps.ShowVer, "v", cmdOps.ShowVer, "show build version and quit")
@@ -68,6 +72,8 @@ func initCmdOptions() {
 	flag.StringVar(&cmdOps.OsUser, "os-user", cmdOps.OsUser, "os user, required for rebalancing non-replicated tables")
 	flag.StringVar(&cmdOps.OsPassword, "os-password", cmdOps.OsPassword, "os password")
 	flag.IntVar(&cmdOps.OsPort, "os-port", cmdOps.OsPort, "ssh port")
+	flag.StringVar(&cmdOps.ChDatabase, "ch-database", cmdOps.ChDatabase, "clickhouse database")
+	flag.StringVar(&cmdOps.ChTables, "ch-tables", cmdOps.ChTables, "a list of comma-separated clickhouse table")
 	flag.Parse()
 }
 
@@ -81,9 +87,17 @@ func main() {
 		os.Exit(0)
 	}
 	if len(cmdOps.ChHosts) == 0 {
-		log.Logger.Fatalf("need to specify clickhouse hosts, one from each shard")
+		log.Logger.Fatalf("Need to specify clickhouse hosts, one from each shard")
 	}
 	chHosts = strings.Split(cmdOps.ChHosts, ",")
+	if len(cmdOps.ChDatabase) == 0 {
+		log.Logger.Fatalf("Need to specify clickhouse database")
+	}
+	database := cmdOps.ChDatabase
+	if len(cmdOps.ChTables) == 0 {
+		log.Logger.Fatalf("Need to specify clickhouse tables, Separate multiple tables with commas")
+	}
+	tables := strings.Split(cmdOps.ChTables, ",")
 	rebalancer := &rebalance.CKRebalance{
 		Hosts:      chHosts,
 		Port:       cmdOps.ChPort,
@@ -96,20 +110,20 @@ func main() {
 		DBTables:   make(map[string][]string),
 		RepTables:  make(map[string]map[string]string),
 	}
-
 	defer common.Pool.Close()
 
 	if err = rebalancer.InitCKConns(); err != nil {
 		log.Logger.Fatalf("got error %+v", err)
 	}
 	defer common.CloseConns(chHosts)
-	if err = rebalancer.GetTables(); err != nil {
+
+	// 后期考虑使用整个集群的数据进行 rebalance
+	if err = rebalancer.GetTables(database, tables); err != nil {
 		log.Logger.Fatalf("got error %+v", err)
 	}
 	if err = rebalancer.GetRepTables(); err != nil {
 		log.Logger.Fatalf("got error %+v", err)
 	}
-
 	if err = rebalancer.DoRebalance(); err != nil {
 		log.Logger.Fatalf("got error %+v", err)
 	}
