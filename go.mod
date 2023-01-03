@@ -8,6 +8,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	go.uber.org/zap v1.17.0
 	golang.org/x/crypto v0.0.0-20210513164829-c07d793c2f9a
+	golang.org/x/exp v0.0.0-20221227203929-1b447090c38c
 )
 
 require (
@@ -17,7 +18,7 @@ require (
 	github.com/mattn/go-isatty v0.0.12 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/sys v0.0.0-20210525143221-35b2ab0089ea // indirect
+	golang.org/x/sys v0.1.0 // indirect
 	golang.org/x/term v0.0.0-20210503060354-a79de5458b56 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
